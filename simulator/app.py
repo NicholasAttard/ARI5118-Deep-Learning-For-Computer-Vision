@@ -7,20 +7,22 @@ import graphviz
 st.set_page_config(page_title="Backprop & Gradient Flow", layout="wide")
 st.title("Backprop & Gradient Flow")
 
-tab1, tab2 = st.tabs(["Computational Graph", "Convolution & Softmax"])
+tab1, tab2 = st.tabs(["Backpropagation using Graph", "Softmax & Cross-Entropy"])
 
 with tab1:
     st.header("The Chain Rule")
 
     # Initialize session state
     if 'step' not in st.session_state:
-        st.session_state.step = 'nothing'
+        st.session_state.step = 'initial'
 
     # Input Sliders for a, b, c - from -10 to 10 with default values
     col1, col2, col3 = st.columns(3)
     a = col1.slider("Input (a)", -10.0, 10.0, 3.0)
     b = col2.slider("Input (b)", -10.0, 10.0, 1.0)
     c = col3.slider("Input (c)", -10.0, 10.0, -2.0)
+
+    st.divider()
 
     # Forward Pass
     d = 2 * b
@@ -53,30 +55,46 @@ with tab1:
     dot.attr(rankdir='LR', size='10')
     dot.attr(nodesep='1.0', ranksep='2.0')
     
+    # At the very top of your app
+    if 'step' not in st.session_state:
+        st.session_state.step = 'initial'
+
     is_back = st.session_state.step == 'backward'
     red = "#FF4B4B"
     green = "#29B045"
+    blue = "#3B82F6"
 
-    # Node Styling Functions
+    current_step = st.session_state.step
+
+    if current_step == 'initial':
+        node_color = blue
+        is_back = False
+    elif current_step == 'forward':
+        node_color = green
+        is_back = False
+    else: # backward
+        node_color = red
+        is_back = True
+
     def get_label(name, val, grad=None):
-        if is_back and grad is not None:
-            return f"{name}\nVal: {val}\nGrad: {grad}"
+        if current_step == 'backward' and grad is not None:
+            return f"{name}\nVal: {val}\nGrad: {grad:.2f}"
         return f"{name}\nVal: {val}"
     
     # Define Nodes
     with dot.subgraph() as s:
         s.attr(rank='same')
-        s.node('A', get_label('a', a, dL_da), color=red if is_back else green, shape='circle')
-        s.node('B', get_label('b', b, dL_db), color=red if is_back else green, shape='circle')
-        s.node('C', get_label('c', c, dL_dc), color=red if is_back else green, shape='circle')
+        s.node('A', get_label('a', a, dL_da), color=node_color, shape='circle')
+        s.node('B', get_label('b', b, dL_db), color=node_color, shape='circle')
+        s.node('C', get_label('c', c, dL_dc), color=node_color, shape='circle')
         
         # Makes the input circles in alphabetical order
         s.edge('A', 'B', style='invis')
         s.edge('B', 'C', style='invis')
 
-        dot.node('D', get_label('d = 2b', d, dL_de * de_dd), color=red if is_back else green)
-        dot.node('E', get_label('e = a + d', e, dL_de), color=red if is_back else green)
-        dot.node('L', get_label('L = ce', L, dL_dL), color=red if is_back else green)
+        dot.node('D', get_label('d = 2b', d, dL_de * de_dd), color=node_color)
+        dot.node('E', get_label('e = a + d', e, dL_de), color=node_color)
+        dot.node('L', get_label('L = ce', L, dL_dL), color=node_color)
 
         # Define Edges
         dot.edge('A', 'E')
@@ -88,6 +106,8 @@ with tab1:
     # Center aligning the graph
     with center_column:
         st.graphviz_chart(dot, use_container_width=True)
+
+    st.divider()
 
     # Explanation of Forward and Backward Passes calculations
     # Initial Partial Derivatives calculated
@@ -113,3 +133,45 @@ with tab1:
 
 with tab2:
     st.header("Softmax & Cross-Entropy")
+
+    st.info("### Softmax Function")
+    st.latex(rf"\sigma(z_i) = \frac{{e^{{z_i}}}}{{\sum_{{j=1}}^K e^{{z_j}}}}")
+
+    st.divider()
+
+    st.subheader("Target ($y$)")
+    # The internal tick boxes
+    # We use a radio with a custom label to make it look like a selection
+    target_class = st.radio("Select the correct class:", ["Class A", "Class B", "Class C"])
+
+    st.divider()
+
+    # Input Sliders for a, b, c - from -10 to 10 with default values
+    col1, col2, col3 = st.columns(3)
+    class1 = col1.slider("Output (class 1)", -5.0, 5.0, 2.0)
+    class2 = col2.slider("Output (class 2)", -5.0, 5.0, 1.0)
+    class3 = col3.slider("Output (class 3)", -5.0, 5.0, 0.1)
+
+    def softmax(x):
+        exps = np.exp(x - np.max(x))
+        return exps / np.sum(exps)
+
+    def cross_entropy(predictions, labels):
+        return -np.sum(labels * np.log(predictions + 1e-15))
+
+    logits = np.array([class1, class2, class3])
+    true_label = np.array([1, 0, 0]) 
+
+    st.divider()
+
+    st.latex(rf"Logits: \quad z = [{class1}, {class2}, {class3}]")
+    st.latex(rf"Softmax: \quad \sigma(z) = {softmax(logits)}")
+
+    st.divider()
+
+    st.info("### Cross-Entropy Loss")
+    st.latex(rf"CrossEntropy(y, \hat{{y}}) = -\sum_{{i=1}}^K y_i \log(\hat{{y}}_i)")
+
+    st.divider()
+
+    st.latex(rf"Loss: \quad L = {cross_entropy(softmax(logits), true_label)}")  
