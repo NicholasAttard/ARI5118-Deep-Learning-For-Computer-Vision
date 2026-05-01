@@ -79,7 +79,11 @@ with tab1:
     def get_label(name, val, grad=None):
         if current_step == 'backward' and grad is not None:
             return f"{name}\nVal: {val}\nGrad: {grad:.2f}"
-        return f"{name}\nVal: {val}"
+        
+        if current_step == 'forward':
+            return f"{name}\nVal: {val}"
+        
+        return f"{name}"
     
     # Define Nodes
     with dot.subgraph() as s:
