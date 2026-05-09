@@ -3,13 +3,14 @@ import pandas as pd
 import numpy as np
 import graphviz
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import sympy as sp
 
 # Page Setup
 st.set_page_config(page_title="Backprop & Gradient Flow", layout="wide")
 st.title("Backprop & Gradient Flow")
 
-tab1, tab2 = st.tabs(["Backpropagation using Graph", "Softmax & Cross-Entropy"])
+tab1, tab2, tab3 = st.tabs(["Backpropagation using Graph", "Softmax & Cross-Entropy", "Neural Network Weight Update and Loss Calculation"])
 
 with tab1:
     st.header("The Chain Rule")
@@ -271,3 +272,204 @@ with tab2:
     st.divider()
 
     st.latex(rf"Loss: \quad L = {cross_entropy(softmax(logits), true_label)}")  
+
+
+
+
+with tab3:
+
+    # --- Page Setup ---
+    st.set_page_config(page_title="NN Visualizer", layout="wide")
+
+    # --- Math Functions ---
+    def relu(x): return np.maximum(0, x)
+    def relu_deriv(x): return (x > 0).astype(float)
+
+    def softmax(z):
+        shift_z = z - np.max(z)
+        exps = np.exp(shift_z)
+        return exps / np.sum(exps, axis=0)
+
+
+    def initialize_nn():
+        return {
+            # Weights: He Initialization sqrt(2/fan_in)
+            'W1': np.random.randn(3, 2) * np.sqrt(2 / 2),
+            'W2': np.random.randn(2, 3) * np.sqrt(2 / 3),
+            
+            # Biases: Explicitly zero
+            'b1': np.zeros((3, 1)),
+            'b2': np.zeros((2, 1)),
+            
+            # Momentum Velocities: Must be zero
+            'vW1': np.zeros((3, 2)),
+            'vb1': np.zeros((3, 1)),
+            'vW2': np.zeros((2, 3)),
+            'vb2': np.zeros((2, 1)),
+            'a1': np.zeros((3, 1)),
+            'a2': np.zeros((2, 1)),
+            'step': "Ready",
+            'loss_history': []
+        }
+
+    if 'nn' not in st.session_state:
+        st.session_state.nn = initialize_nn()
+
+    nn = st.session_state.nn
+
+    st.title("Interactive Neural Network Simulator")
+    st.write("Adjust inputs and parameters below, then walk through the training steps.")
+
+    input_col, param_col = st.columns(2)
+
+    with input_col:
+        st.subheader("Data Inputs")
+        x1 = st.slider("Input 1 (x1)", -2.0, 2.0, 1.0)
+        x2 = st.slider("Input 2 (x2)", -2.0, 2.0, 0.5)
+        x_in = np.array([[x1], [x2]])
+        
+        target_idx = st.select_slider("Target Class (Which node should be 1.0?)", options=[0, 1])
+        y_target = np.zeros((2, 1))
+        y_target[target_idx] = 1.0
+
+    with param_col:
+        st.subheader("Hyperparameters")
+        lr = st.slider("Learning Rate", 0.01, 1.0, 0.2)
+        
+        if st.button("Reset Network & History", use_container_width=True):
+            st.session_state.nn = initialize_nn()
+            st.rerun()
+
+    st.divider()
+    step_col1, step_col2, step_col3 = st.columns(3)
+
+    if step_col1.button("1. Forward Pass", use_container_width=True):
+        nn['z1'] = np.dot(nn['W1'], x_in) + nn['b1']
+        nn['a1'] = np.maximum(0, nn['z1'])
+        
+        nn['z2'] = np.dot(nn['W2'], nn['a1']) + nn['b2']
+        shift_z2 = nn['z2'] - np.max(nn['z2'])
+        nn['a2'] = np.exp(shift_z2) / np.sum(np.exp(shift_z2), axis=0)
+        
+        nn['step'] = "Forward"
+
+    if step_col2.button("2. Backward Pass", use_container_width=True):
+        if 'a2' in nn:
+            dz2 = nn['a2'] - y_target
+            nn['dW2'] = np.dot(dz2, nn['a1'].T)
+            dz1 = np.dot(nn['W2'].T, dz2) * relu_deriv(nn['z1'])
+            nn['dW1'] = np.dot(dz1, x_in.T)
+            nn['step'] = "Backward"
+        else:
+            st.warning("Please run Forward Pass first.")
+
+    if step_col3.button("3. Update Weights", use_container_width=True):
+        if 'dW1' in nn:
+            beta = 0.9
+            
+            nn['vW1'] = beta * nn['vW1'] + (1 - beta) * nn['dW1']
+            nn['W1'] -= lr * nn['vW1']
+            
+            nn['vW2'] = beta * nn['vW2'] + (1 - beta) * nn['dW2']
+            nn['W2'] -= lr * nn['vW2']
+            
+            loss = -np.log(nn['a2'][target_idx, 0] + 1e-9)
+            nn['loss_history'].append(loss)
+            nn['step'] = "Updated with Momentum"
+
+    if st.button("Run Full Iteration", use_container_width=True):
+        #Forward Pass
+        nn['z1'] = np.dot(nn['W1'], x_in) + nn['b1']
+        nn['a1'] = np.maximum(0, nn['z1']) 
+        nn['z2'] = np.dot(nn['W2'], nn['a1']) + nn['b2']
+        shift_z2 = nn['z2'] - np.max(nn['z2'])
+        nn['a2'] = np.exp(shift_z2) / np.sum(np.exp(shift_z2), axis=0)
+        
+        #Backward Pass
+        dz2 = nn['a2'] - y_target
+        nn['dW2'] = np.dot(dz2, nn['a1'].T)
+        nn['db2'] = dz2
+        dz1 = np.dot(nn['W2'].T, dz2) * (nn['z1'] > 0).astype(float)
+        nn['dW1'] = np.dot(dz1, x_in.T)
+        nn['db1'] = dz1
+        
+        #Update Weights
+        beta = 0.9
+        nn['vW1'] = beta * nn['vW1'] + (1 - beta) * nn['dW1']
+        nn['vb1'] = beta * nn['vb1'] + (1 - beta) * nn['db1']
+        nn['W1'] -= lr * nn['vW1']
+        nn['b1'] -= lr * nn['vb1']
+        
+        nn['vW2'] = beta * nn['vW2'] + (1 - beta) * nn['dW2']
+        nn['vb2'] = beta * nn['vb2'] + (1 - beta) * nn['db2']
+        nn['W2'] -= lr * nn['vW2']
+        nn['b2'] -= lr * nn['vb2']
+        
+        #Record Loss
+        loss = -np.log(nn['a2'][target_idx, 0] + 1e-9)
+        nn['loss_history'].append(loss)
+        nn['step'] = "Full Iteration Complete"
+
+    def draw_network():
+        # Increase DPI and figsize for better text clarity
+        fig, ax = plt.subplots(figsize=(12, 7), dpi=100)
+        ax.set_aspect('equal')
+        ax.axis('off')
+
+        # Spread: In at -5, Hidden at 0, Out at 5
+        cols = {'in': -5, 'hid': 0, 'out': 5}
+        y_coords = {'in': [1.5, -1.5], 'hid': [2.5, 0, -2.5], 'out': [1.5, -1.5]}
+        
+        #Weights & Connections
+        for i, yi in enumerate(y_coords['in']):
+            for j, yj in enumerate(y_coords['hid']):
+                ax.plot([cols['in'], cols['hid']], [yi, yj], color='gray', lw=1, alpha=0.3, zorder=1)
+                t, stagger = 0.3, (0.2 if i == 0 else -0.2)
+                ax.text(cols['in'] + (cols['hid']-cols['in'])*t, yi + (yj-yi)*t + stagger, 
+                        f"{nn['W1'][j,i]:.2f}", color='blue', fontsize=9, ha='center',
+                        fontweight='bold', zorder=5, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=0.5))
+
+        for i, yi in enumerate(y_coords['hid']):
+            for j, yj in enumerate(y_coords['out']):
+                ax.plot([cols['hid'], cols['out']], [yi, yj], color='gray', lw=1, alpha=0.3, zorder=1)
+                t, stagger = 0.7, ([0.25, 0, -0.25][i])
+                ax.text(cols['hid'] + (cols['out']-cols['hid'])*t, yi + (yj-yi)*t + stagger, 
+                        f"{nn['W2'][j,i]:.2f}", color='blue', fontsize=9, ha='center',
+                        fontweight='bold', zorder=5, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=0.5))
+
+        #Input Nodes
+        for i, y in enumerate(y_coords['in']):
+            ax.add_patch(patches.Circle((cols['in'], y), 0.75, fc='white', ec='black', lw=2, zorder=10))
+            ax.text(cols['in'], y, f"{x_in[i,0]:.2f}", 
+                    ha='center', va='center', color='black', fontweight='bold', fontsize=11, zorder=20)
+
+        #Hidden Nodes
+        for i, y in enumerate(y_coords['hid']):
+            val = nn.get('a1', np.zeros((3,1)))[i,0]
+            node_color = '#6a0dad' if val > 0 else '#4169e1' # Purple if active, Blue if inactive
+            
+            ax.add_patch(patches.Circle((cols['hid'], y), 0.75, fc=node_color, ec='black', lw=2, zorder=10))
+            ax.text(cols['hid'], y, f"{val:.2f}", 
+                    ha='center', va='center', color='white', fontweight='bold', fontsize=11, zorder=20)
+
+        # Output Nodes
+        for i, y in enumerate(y_coords['out']):
+            prob_val = nn.get('a2', np.zeros((2,1)))[i, 0]
+            edge_c = 'red' if i == target_idx else 'black'
+            
+            ax.add_patch(patches.Circle((cols['out'], y), 0.75, fc='white', ec=edge_c, lw=3, zorder=10))
+            ax.text(cols['out'], y, f"P({i})\n{prob_val:.4f}", 
+                    ha='center', va='center', color='black', fontweight='bold', fontsize=11, zorder=20)
+
+        st.pyplot(fig)
+   
+    draw_network()
+
+    st.divider()
+    #Metrics and History
+    if nn['loss_history']:
+        m1, m2 = st.columns([1, 2])
+        with m1:
+            st.metric("Current Loss", f"{nn['loss_history'][-1]:.4f}")
+        with m2:
+            st.line_chart(nn['loss_history'])
