@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import graphviz
+import matplotlib.pyplot as plt
+import sympy as sp
 
 # Page Setup
 st.set_page_config(page_title="Backprop & Gradient Flow", layout="wide")
@@ -41,13 +43,42 @@ with tab1:
     dL_da = dL_de * de_da
     dL_db = dL_de * de_dd * dd_db
 
-    # Control Buttons to change mode between forward and backward passs
+    is_back = st.session_state.step == 'backward'
+    red = "#FF4B4B"
+    green = "#29B045"
+    blue = "#3B82F6"
+
+     # Control Buttons to change mode between forward and backward passs
     col1, col2 = st.columns(2)
     if col1.button("Run Forward Pass"):
         st.session_state.step = 'forward'
 
     if col2.button("Run Backward Pass"):
         st.session_state.step = 'backward'
+        is_back = st.session_state.step == 'backward'
+
+    # Explanation of Forward and Backward Passes calculations
+    # Initial Partial Derivatives calculated
+    if is_back:
+        st.error("### Backward Pass")
+        st.latex(rf"\frac{{\partial L}}{{\partial a}} = \frac{{\partial L}}{{\partial e}} \cdot \frac{{\partial e}}{{\partial a}} = {dL_de} \cdot {de_da} = {dL_da}")
+        st.latex(rf"\frac{{\partial L}}{{\partial b}} = \frac{{\partial L}}{{\partial e}} \cdot \frac{{\partial e}}{{\partial d}} \cdot \frac{{\partial d}}{{\partial b}} = {dL_de} \cdot {de_dd} \cdot {dd_db} = {dL_db}")
+        st.latex(rf"\frac{{\partial L}}{{\partial c}} = \frac{{\partial L}}{{\partial c}}  = {dL_dc}")
+    
+    elif st.session_state.step == 'forward':
+        st.success("### Forward Pass")
+        st.latex(rf"d = 2b = 2 \cdot {b} = {d}")
+        st.latex(rf"e = a + d = {a} + {d} = {e}")
+        st.latex(rf"L = ce = {c} \cdot {e} = {L}")
+
+    
+    st.info("### Partial Derivatives")
+    # \quad to add tab, \qquad to add large tab
+    st.latex(rf"L = ce : \quad \frac{{\partial L}}{{\partial c}} = e \quad,\quad \frac{{\partial L}}{{\partial e}} = c")
+    st.latex(rf"L = a + d : \quad \frac{{\partial e}}{{\partial a}} = 1 \quad,\quad \frac{{\partial e}}{{\partial d}} = 1")
+    st.latex(rf"d = 2b : \quad \frac{{\partial d}}{{\partial b}} = 2")
+
+    st.divider()
 
     # Graph Settup
     left_spacer, center_column, right_spacer = st.columns([1, 15, 1])
@@ -55,14 +86,8 @@ with tab1:
     dot.attr(rankdir='LR', size='10')
     dot.attr(nodesep='1.0', ranksep='2.0')
     
-    # At the very top of your app
     if 'step' not in st.session_state:
         st.session_state.step = 'initial'
-
-    is_back = st.session_state.step == 'backward'
-    red = "#FF4B4B"
-    green = "#29B045"
-    blue = "#3B82F6"
 
     current_step = st.session_state.step
 
@@ -113,26 +138,93 @@ with tab1:
 
     st.divider()
 
-    # Explanation of Forward and Backward Passes calculations
-    # Initial Partial Derivatives calculated
-    if is_back:
-        st.error("### Backward Pass")
-        st.latex(rf"\frac{{\partial L}}{{\partial a}} = \frac{{\partial L}}{{\partial e}} \cdot \frac{{\partial e}}{{\partial a}} = {dL_de} \cdot {de_da} = {dL_da}")
-        st.latex(rf"\frac{{\partial L}}{{\partial b}} = \frac{{\partial L}}{{\partial e}} \cdot \frac{{\partial e}}{{\partial d}} \cdot \frac{{\partial d}}{{\partial b}} = {dL_de} \cdot {de_dd} \cdot {dd_db} = {dL_db}")
-        st.latex(rf"\frac{{\partial L}}{{\partial c}} = \frac{{\partial L}}{{\partial c}}  = {dL_dc}")
-    
-    elif st.session_state.step == 'forward':
-        st.success("### Forward Pass")
-        st.latex(rf"d = 2b = 2 \cdot {b} = {d}")
-        st.latex(rf"e = a + d = {a} + {d} = {e}")
-        st.latex(rf"L = ce = {c} \cdot {e} = {L}")
+    st.info("### Gradient Descent to Update Weights")
 
-    else:
-        st.info("### Partial Derivatives")
-        # \quad to add tab, \qquad to add large tab
-        st.latex(rf"L = ce : \quad \frac{{\partial L}}{{\partial c}} = e \quad,\quad \frac{{\partial L}}{{\partial e}} = c")
-        st.latex(rf"L = a + d : \quad \frac{{\partial e}}{{\partial a}} = 1 \quad,\quad \frac{{\partial e}}{{\partial d}} = 1")
-        st.latex(rf"d = 2b : \quad \frac{{\partial d}}{{\partial b}} = 2")
+    #Session State
+    if 'x_curr' not in st.session_state:
+        st.session_state.x_curr = 0.0
+    if 'iteration' not in st.session_state:
+        st.session_state.iteration = 0
+    if 'history' not in st.session_state:
+        st.session_state.history = []
+
+   
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        st.subheader("Configuration")
+        
+        #Function Input
+        raw_func = st.text_input("Function", value="x**2 + 4")
+        
+        #Validate function
+        try:
+            x_sym = sp.symbols('x')
+            # This converts the string into a math expression
+            f_sym = sp.simplify(raw_func) 
+            df_sym = sp.diff(f_sym, x_sym)
+            
+            # Convert SymPy expressions to fast numerical functions
+            f_num = sp.lambdify(x_sym, f_sym, "numpy")
+            df_num = sp.lambdify(x_sym, df_sym, "numpy")
+            
+        except Exception as e:
+            st.error("Invalid Function! Use Python syntax (e.g., x**2 for x²)")
+            st.stop()
+
+        start_point = st.number_input("Starting Point", value=5.0)
+        learning_rate = st.number_input("Learning Rate", value=0.1, step=0.01, format="%.2f")
+
+        if st.button("Set Up", use_container_width=True):
+            st.session_state.x_curr = float(start_point)
+            st.session_state.iteration = 0
+            st.session_state.history = [float(start_point)]
+
+        if st.button("Next Iteration", use_container_width=True):
+            grad = df_num(st.session_state.x_curr)
+            st.session_state.x_curr -= learning_rate * grad
+            st.session_state.iteration += 1
+            st.session_state.history.append(st.session_state.x_curr)
+
+    with col2:
+        st.subheader(f"Iteration: {st.session_state.iteration}")
+        
+        # Dynamic axis scaling based on start point
+        limit = max(abs(start_point) * 1.5, 10)
+        x_range = np.linspace(-limit, limit, 500)
+        
+        try:
+            y_range = f_num(x_range)
+            
+            fig, ax = plt.subplots()
+            ax.plot(x_range, y_range, color="steelblue", lw=2, label=f"f(x) = {raw_func}")
+            
+            if st.session_state.history:
+                h_x = np.array(st.session_state.history)
+                h_y = f_num(h_x)
+                
+                #ax.plot(h_x, h_y, color="orange", linestyle="--", alpha=0.8)
+                ax.scatter(h_x, h_y, color="red", s=15)
+                
+                curr_x = st.session_state.x_curr
+                curr_y = f_num(curr_x)
+                slope = df_num(curr_x)
+                
+                ax.scatter([curr_x], [curr_y], color="green", s=10, zorder=5)
+                
+                tan_x = np.linspace(curr_x - 5, curr_x + 5, 10)
+                ax.plot(tan_x, slope*(tan_x - curr_x) + curr_y, color="coral", lw=2)
+
+            ax.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
+            ax.axhline(0, color='black', lw=0.8)
+            ax.axvline(0, color='black', lw=0.8)
+            for spine in ax.spines.values(): spine.set_visible(False)
+            
+            st.pyplot(fig)
+            st.metric("Current Value", f"{st.session_state.x_curr:.4f}")
+            
+        except Exception as e:
+            st.warning("Could not plot function. Check your math syntax!")
 
 
 with tab2:
