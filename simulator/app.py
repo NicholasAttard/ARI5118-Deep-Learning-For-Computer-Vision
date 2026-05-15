@@ -268,7 +268,7 @@ with tab2:
 
     st.divider()
 
-    st.info("### Cross-Entropy Loss")
+    #st.info("### Cross-Entropy Loss")
     st.latex(rf"CrossEntropy(y, \hat{{y}}) = -\sum_{{i=1}}^K y_i \log(\hat{{y}}_i)")
 
     st.divider()
