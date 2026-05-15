@@ -257,12 +257,14 @@ with tab2:
         return -np.sum(labels * np.log(predictions + 1e-15))
 
     logits = np.array([class1, class2, class3])
+    probs  = softmax(logits)
+    clean_probs = [round(float(x), 4) for x in probs]
     true_label = np.array([1, 0, 0]) 
 
     st.divider()
 
     st.latex(rf"Logits: \quad z = [{class1}, {class2}, {class3}]")
-    st.latex(rf"Softmax: \quad \sigma(z) = {softmax(logits)}")
+    st.latex(rf"Softmax: \quad \sigma(z) = {clean_probs}")
 
     st.divider()
 
